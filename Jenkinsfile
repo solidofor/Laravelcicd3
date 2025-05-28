@@ -4,7 +4,7 @@ pipeline {
     environment {
         DOCKERHUB_CREDENTIALS = credentials('docker')
         GITHUB_CREDENTIALS = credentials('github')
-		GITHUB_CREDENTIALS = credentials('argocd-api-token')
+		ARGOCD_TOKEN = credentials('argocd-api-token')
         DOCKER_IMAGE = 'oforsolid/laravelcicd3'
         DEPLOYMENT_REPO = 'https://github.com/solidofor/Laravelcicd3-deploy.git'
         COMMIT_SHA = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
