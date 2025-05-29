@@ -2,44 +2,54 @@ pipeline {
     agent { label "jenkins-build-node" }
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('docker')
-        GITHUB_CREDENTIALS = credentials('github')
-        DOCKER_IMAGE = 'oforsolid/laravelcicd3'
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')
+        IMAGE_NAME = "oforsolid/laravelcicd3"
+        IMAGE_TAG = "v${env.BUILD_NUMBER}"
+        GITHUB_CREDENTIALS = credentials('github') 
         DEPLOYMENT_REPO = 'https://github.com/solidofor/Laravelcicd3-deploy.git'
-        COMMIT_SHA = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
 
     stages {
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
-                checkout scm
+                git branch: 'main', url: 'https://github.com/solidofor/laravelcicd3.git'
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh "docker build -t ${DOCKER_IMAGE}:${COMMIT_SHA} -t ${DOCKER_IMAGE}:latest ."
+                    docker.build("${IMAGE_NAME}:${IMAGE_TAG}")
                 }
             }
         }
 
-        stage('Login to Docker Hub') {
+        stage('Push to DockerHub') {
             steps {
                 script {
-                    sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
+                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhub') {
+                        docker.image("${IMAGE_NAME}:${IMAGE_TAG}").push()
+                    }
                 }
             }
         }
 
-        stage('Push to Docker Hub') {
-            steps {
-                script {
-                    sh "docker push ${DOCKER_IMAGE}:${COMMIT_SHA}"
-                    sh "docker push ${DOCKER_IMAGE}:latest"
-                }
-            }
-        }
+
+        // stage('Update Manifest and Push to GitHub') {
+        //     steps {
+        //         script {
+        //             sh """
+        //                 sed -i 's|image: ${IMAGE_NAME}:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|' laravel-deployment.yaml
+        //                 git config user.name "solidofor"
+        //                 git config user.email "solidofor@yahoo.com"
+        //                 git remote set-url origin https://${GITHUB_CREDENTIALS_USR}:${GITHUB_CREDENTIALS_PSW}@github.com/solidofor/Laravelcicd3-deploy.git
+        //                 git add laravel-deployment.yaml
+        //                 git commit -m "Update image tag to ${IMAGE_TAG}  [CI]" || echo "No changes to commit"
+        //                 git push origin main
+        //             """
+        //         }
+        //     }
+        
 
         stage('Update Deployment Manifest') {
             steps {
@@ -50,48 +60,43 @@ pipeline {
                             credentialsId: 'github',
                             branch: 'main'
                         )
-
                         sh """
-                            sed -i 's|${DOCKER_IMAGE}:.*|${DOCKER_IMAGE}:${COMMIT_SHA}|' laravel-deployment.yaml
+                            sed -i 's|${IMAGE_NAME}:.*|${IMAGE_NAME}:${IMAGE_TAG}|' laravel-deployment.yaml
                         """
 
                         withCredentials([usernamePassword(
                             credentialsId: 'github',
-                            usernameVariable: 'GIT_USERNAME',
-                            passwordVariable: 'GIT_PASSWORD'
+                            usernameVariable: 'GITHUB_CREDENTIALS_USR',
+                            passwordVariable: 'GITHUB_CREDENTIALS_PSW'
                         )]) {
                             sh """
                                 git config user.email "solidofor@yahoo.com"
                                 git config user.name "solidofor"
+                                git remote set-url origin https://${GITHUB_CREDENTIALS_USR}:${GITHUB_CREDENTIALS_PSW}@github.com/solidofor/Laravelcicd3-deploy.git
                                 git add laravel-deployment.yaml
-                                git commit -m "Update image to ${COMMIT_SHA} [CI]" || echo "No changes to commit"
-                                git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/solidofor/Laravelcicd3-deploy.git HEAD:main
+                                git commit -m "Update image tag to ${IMAGE_TAG} [CI]" || echo "No changes to commit"
+                                git push origin main
                             """
                         }
                     }
                 }
             }
         }
-    }
 
-    post {
-        always {
-            node("jenkins-build-node") {
-                script {
-                    sh 'docker logout'
-                }
-                cleanWs()
-            }
-        }
-        success {
-            script {
-                slackSend(color: 'good', message: "SUCCESS: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
-            }
-        }
-        failure {
-            script {
-                slackSend(color: 'danger', message: "FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
-            }
-        }
+                                // git config user.email "solidofor@yahoo.com"
+                                // git config user.name "solidofor"
+                                // git add laravel-deployment.yaml
+                                // git commit -m "Update image tag to ${IMAGE_TAG} [CI]" || echo "No changes to commit"
+                                // git push https://${GITHUB_CREDENTIALS_USR}:${GITHUB_CREDENTIALS_PSW}@github.com/solidofor/Laravelcicd3-deploy.git
+                                
+                                // sed -i 's|image: ${IMAGE_NAME}:.*|image: ${IMAGE_NAME}:${IMAGE_TAG}|' laravel-deployment.yaml
+                                // git config user.name "solidofor"
+                                // git config user.email "solidofor@yahoo.com"
+                                // git remote set-url origin https://${GITHUB_CREDENTIALS_USR}:${GITHUB_CREDENTIALS_PSW}@github.com/solidofor/Laravelcicd3-deploy.git
+                                // git add laravel-deployment.yaml
+                                // git commit -m "Update image tag to ${IMAGE_TAG}  [CI]" || echo "No changes to commit"
+                                // git push origin main
+
+
     }
 }
